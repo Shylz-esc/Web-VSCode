@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TitleBar } from './components/Layout/TitleBar';
 import { ActivityBar } from './components/Layout/ActivityBar';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -34,8 +34,7 @@ export default function App() {
   useEffect(() => {
     if (activeFile && activeFile.type === 'file') {
       setSourceContent(activeFile.content || '');
-      // Reset typing progress when switching files
-      setDisplayedContent('');
+      setDisplayedContent(''); // Reset on file switch
       setCursorIndex(0);
     }
   }, [activeFile, activeFileId]);
@@ -44,26 +43,43 @@ export default function App() {
   const handleTyping = useCallback((e: KeyboardEvent) => {
     if (!isEditorFocused) return;
     
-    // Ignore special keys to allow normal browser shortcuts (F5, etc) unless it's a typing key
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    // Ignore special keys
+    if (e.ctrlKey || e.altKey || e.metaKey || e.key === 'Shift' || e.key === 'CapsLock') return;
     
-    // Allow Backspace to undo typing
+    // Allow Backspace
     if (e.key === 'Backspace') {
       setCursorIndex(prev => Math.max(0, prev - 1));
       setDisplayedContent(prev => prev.slice(0, -1));
       return;
     }
 
-    // Only type if we have content left
     if (cursorIndex < sourceContent.length) {
-      // Type 1-3 characters at a time for a more fluid feel, or strictly 1 as requested.
-      // Requirement says "keydown... content increases by one character".
-      // We will stick to 1 char per keydown for strict adherence, 
-      // but if the user holds the key, it will fire multiple keydowns.
-      
-      const char = sourceContent[cursorIndex];
-      setDisplayedContent(prev => prev + char);
-      setCursorIndex(prev => prev + 1);
+      let nextChar = sourceContent[cursorIndex];
+      let nextIndex = cursorIndex + 1;
+
+      // Auto-indentation feature: if we just typed a newline, 
+      // check if the source has indentation (spaces/tabs) immediately following.
+      // If so, type them all out instantly.
+      if (nextChar === '\n') {
+          let lookaheadIndex = nextIndex;
+          let extraChars = '';
+          while (lookaheadIndex < sourceContent.length) {
+              const char = sourceContent[lookaheadIndex];
+              if (char === ' ' || char === '\t') {
+                  extraChars += char;
+                  lookaheadIndex++;
+              } else {
+                  break;
+              }
+          }
+          if (extraChars.length > 0) {
+              nextChar += extraChars;
+              nextIndex = lookaheadIndex;
+          }
+      }
+
+      setDisplayedContent(prev => prev + nextChar);
+      setCursorIndex(nextIndex);
     }
   }, [isEditorFocused, cursorIndex, sourceContent]);
 
@@ -72,8 +88,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleTyping);
   }, [handleTyping]);
 
-  // File Upload Handler
-  const handleFileUpload = (uploadedFile: File) => {
+  // --- File Import Logic ---
+
+  const handleFileImport = (uploadedFile: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
@@ -88,10 +105,12 @@ export default function App() {
       };
 
       setFiles(prev => {
+        // Add to the first folder if it exists, else add to root
         const newFiles = [...prev];
-        // Add to root folder's children
-        if (newFiles[0] && newFiles[0].children) {
-            newFiles[0].children.push(newFile);
+        if (newFiles.length > 0 && newFiles[0].type === 'folder' && newFiles[0].children) {
+           newFiles[0].children.push(newFile);
+        } else {
+           newFiles.push(newFile);
         }
         return newFiles;
       });
@@ -99,6 +118,110 @@ export default function App() {
       setActiveFileId(newFileId);
     };
     reader.readAsText(uploadedFile);
+  };
+
+  const handleFolderImport = async (fileList: FileList) => {
+    const newFileStructure: FileNode[] = [];
+    const filesArray = Array.from(fileList);
+    
+    // Filter junk folders early
+    const relevantFiles = filesArray.filter(file => {
+        const path = file.webkitRelativePath || '';
+        return !path.includes('/node_modules/') && 
+               !path.includes('/.git/') && 
+               !path.includes('/dist/') && 
+               !path.includes('/build/');
+    });
+
+    // Helper to find or create folder in a list of nodes
+    // Needs to be defined here to be used in the loop
+    const getOrCreateFolder = (nodes: FileNode[], name: string): FileNode => {
+      let folder = nodes.find(n => n.name === name && n.type === 'folder');
+      if (!folder) {
+        folder = {
+          id: `folder-${name}-${Math.random().toString(36).substr(2, 9)}`,
+          name: name,
+          type: 'folder',
+          children: [],
+          isOpen: false // Keep subfolders closed by default
+        };
+        nodes.push(folder);
+      }
+      return folder;
+    };
+
+    const validExtensions = ['.js', '.jsx', '.ts', '.tsx', '.css', '.scss', '.html', '.json', '.md', '.txt', '.py', '.java', '.c', '.cpp', '.h', '.xml', '.yml', '.yaml', '.sql', '.rs', '.go', '.php'];
+    
+    const readFile = (file: File): Promise<string> => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string || '');
+            reader.onerror = () => resolve('');
+            reader.readAsText(file);
+        });
+    };
+
+    const processFile = async (file: File) => {
+        const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+        
+        // Skip binaries and large unknown files
+        if (!validExtensions.includes(extension) && file.size > 200 * 1024) return;
+        if (file.type.startsWith('image/') || file.type.startsWith('audio/') || file.type.startsWith('video/')) return;
+
+        try {
+            const content = await readFile(file);
+            
+            // Build Structure
+            const pathParts = file.webkitRelativePath.split('/');
+            let currentLevel = newFileStructure;
+            
+            for (let j = 0; j < pathParts.length - 1; j++) {
+                const folderName = pathParts[j];
+                const folderNode = getOrCreateFolder(currentLevel, folderName);
+                if (folderNode.children) {
+                    currentLevel = folderNode.children;
+                }
+            }
+
+            const fileName = pathParts[pathParts.length - 1];
+            currentLevel.push({
+                id: `file-${fileName}-${Math.random().toString(36).substr(2, 9)}`,
+                name: fileName,
+                type: 'file',
+                language: fileName.split('.').pop() || 'txt',
+                content: content
+            });
+        } catch (e) {
+            console.error("Skipping file", file.name, e);
+        }
+    };
+
+    // Parallel processing
+    await Promise.all(relevantFiles.map(processFile));
+
+    if (newFileStructure.length > 0) {
+      // Auto expand the root folder if it's a single project folder
+      if (newFileStructure.length === 1 && newFileStructure[0].type === 'folder') {
+          newFileStructure[0].isOpen = true;
+      }
+
+      setFiles(prev => [...prev, ...newFileStructure]);
+      
+      // Try to open the first file
+      const findFirstFile = (nodes: FileNode[]): string | null => {
+        for (const node of nodes) {
+          if (node.type === 'file') return node.id;
+          if (node.children) {
+            const found = findFirstFile(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      
+      const firstId = findFirstFile(newFileStructure);
+      if (firstId) setActiveFileId(firstId);
+    }
   };
 
   return (
@@ -112,7 +235,8 @@ export default function App() {
           files={files} 
           activeFileId={activeFileId} 
           onFileSelect={setActiveFileId}
-          onImport={handleFileUpload}
+          onImportFile={handleFileImport}
+          onImportFolder={handleFolderImport}
         />
         
         <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">

@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { ChevronRight, ChevronDown, FileCode, FileJson, FileText, File, Folder, MoreHorizontal, Upload } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { ChevronRight, ChevronDown, FileCode, FileJson, FileText, File, Folder, MoreHorizontal, Upload, FolderPlus } from 'lucide-react';
 import { FileNode } from '../../types';
 import { THEME } from '../../constants';
 
@@ -7,7 +7,8 @@ interface SidebarProps {
   files: FileNode[];
   activeFileId: string;
   onFileSelect: (id: string) => void;
-  onImport: (file: File) => void;
+  onImportFile: (file: File) => void;
+  onImportFolder: (files: FileList) => void;
 }
 
 const FileIcon = ({ name }: { name: string }) => {
@@ -37,18 +38,36 @@ const FileTreeItem: React.FC<{
   activeId: string, 
   onSelect: (id: string) => void 
 }> = ({ node, depth, activeId, onSelect }) => {
+  // Local state for folder expansion
+  const [isOpen, setIsOpen] = useState(node.isOpen ?? true);
   const isFolder = node.type === 'folder';
   const isActive = node.id === activeId;
+  
+  // Sync internal state if node.isOpen changes externally (optional, but good for "Import Folder" auto-expand)
+  useEffect(() => {
+    if (node.isOpen !== undefined) {
+        setIsOpen(node.isOpen);
+    }
+  }, [node.isOpen]);
+  
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isFolder) {
+      setIsOpen(!isOpen);
+    } else {
+      onSelect(node.id);
+    }
+  };
   
   return (
     <div>
       <div 
         className={`flex items-center py-[2px] cursor-pointer hover:bg-[#2a2d2e] ${isActive ? 'bg-[#37373d]' : ''}`}
         style={{ paddingLeft: `${depth * 12 + 10}px` }}
-        onClick={() => !isFolder && onSelect(node.id)}
+        onClick={handleClick}
       >
         <span className="mr-1 opacity-80">
-           {isFolder ? (node.isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span className="w-[14px] inline-block"/>}
+           {isFolder ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span className="w-[14px] inline-block"/>}
         </span>
         <span className="mr-2">
           {isFolder ? <Folder size={16} className="text-[#858585]" /> : <FileIcon name={node.name} />}
@@ -58,7 +77,7 @@ const FileTreeItem: React.FC<{
         </span>
       </div>
       
-      {isFolder && node.isOpen && node.children?.map(child => (
+      {isFolder && isOpen && node.children?.map(child => (
         <FileTreeItem 
           key={child.id} 
           node={child} 
@@ -71,19 +90,39 @@ const FileTreeItem: React.FC<{
   );
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ files, activeFileId, onFileSelect, onImport }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ files, activeFileId, onFileSelect, onImportFile, onImportFolder }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImportClick = () => {
+  useEffect(() => {
+    if (folderInputRef.current) {
+        // Manually set attributes to ensure directory selection works across browsers
+        folderInputRef.current.setAttribute("webkitdirectory", "");
+        folderInputRef.current.setAttribute("directory", "");
+        folderInputRef.current.setAttribute("multiple", "");
+    }
+  }, []);
+
+  const handleImportFileClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleImportFolderClick = () => {
+    folderInputRef.current?.click();
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onImport(file);
+      onImportFile(file);
     }
-    // Reset input so same file can be selected again if needed
+    if (e.target) e.target.value = '';
+  };
+
+  const onFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onImportFolder(e.target.files);
+    }
     if (e.target) e.target.value = '';
   };
 
@@ -106,23 +145,43 @@ export const Sidebar: React.FC<SidebarProps> = ({ files, activeFileId, onFileSel
         ))}
       </div>
 
-      <div className="p-4 border-t border-[#2b2b2b]">
+      <div className="p-4 border-t border-[#2b2b2b] flex flex-col gap-2">
         <input 
           type="file" 
           ref={fileInputRef} 
           onChange={onFileChange} 
           className="hidden" 
-          accept=".txt,.js,.css,.json,.md,.ts,.tsx,.html,.py,.java"
+          accept=".txt,.js,.css,.json,.md,.ts,.tsx,.html,.py,.java,.c,.cpp,.h"
         />
-        <button 
-          onClick={handleImportClick}
-          className="w-full flex items-center justify-center gap-2 bg-[#007acc] hover:bg-[#0062a3] text-white py-1 px-3 text-xs rounded transition-colors"
-        >
-          <Upload size={14} />
-          <span>Import File</span>
-        </button>
-        <p className="text-[10px] text-[#858585] mt-2 text-center">
-          Import a file, then click the editor and start typing any key!
+        <input 
+          type="file" 
+          ref={folderInputRef} 
+          onChange={onFolderChange} 
+          className="hidden" 
+        />
+        
+        <div className="flex gap-2">
+            <button 
+            onClick={handleImportFileClick}
+            className="flex-1 flex items-center justify-center gap-2 bg-[#3c3c3c] hover:bg-[#4c4c4c] text-white py-1.5 px-2 text-xs rounded transition-colors"
+            title="Import single file"
+            >
+            <Upload size={14} />
+            <span>File</span>
+            </button>
+
+            <button 
+            onClick={handleImportFolderClick}
+            className="flex-1 flex items-center justify-center gap-2 bg-[#007acc] hover:bg-[#0062a3] text-white py-1.5 px-2 text-xs rounded transition-colors"
+            title="Import entire folder"
+            >
+            <FolderPlus size={14} />
+            <span>Folder</span>
+            </button>
+        </div>
+
+        <p className="text-[10px] text-[#858585] mt-1 text-center">
+          Import a file or folder, then click the editor and start typing!
         </p>
       </div>
     </div>
