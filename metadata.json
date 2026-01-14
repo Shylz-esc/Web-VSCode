@@ -1,0 +1,5 @@
+{
+  "name": "Visual Studio Code Simulator",
+  "description": "A realistic VS Code simulator. Import files and reveal their content character by character with every keystroke.",
+  "requestFramePermissions": []
+}

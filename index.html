@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual Studio Code</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&family=Inter:wght@400;500;600&display=swap');
+      
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #1e1e1e;
+        color: #cccccc;
+        font-family: 'Inter', sans-serif;
+      }
+      
+      .font-mono {
+        font-family: 'Fira Code', monospace, Consolas, 'Courier New', Courier;
+      }
+
+      /* Scrollbar Styling */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #424242;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #4f4f4f;
+      }
+      ::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+
+      /* Blinking Cursor Animation */
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+      }
+      .cursor-blink {
+        animation: blink 1s step-end infinite;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
